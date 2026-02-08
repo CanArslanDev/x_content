@@ -1,0 +1,11 @@
+[project]
+name = "x-content"
+version = "1.0.0"
+description = "X Algorithm Tweet Optimizer - transforms tweets for maximum algorithmic reach"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+x-content = "optimize:main"
