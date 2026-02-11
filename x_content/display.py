@@ -1,6 +1,6 @@
 """Terminal output formatting.
 
-Renders signal comparisons, category bars, and summary tables.
+Renders signal comparisons, score bars, and summary tables.
 Uses ANSI colors, dynamic terminal width, and clean formatting
 that makes tweet text easily copyable.
 """
@@ -172,10 +172,10 @@ def render_preserve_style(result: dict) -> str:
     optimized = result["optimized"]
     comparison = result["comparison"]
 
-    orig_overall = report["overall"]
-    opt_overall = comparison["optimized"]["overall"] if comparison else 0
-    change = comparison["overall_change"] if comparison else 0
-    change_str = f"+{change:.0f}" if change >= 0 else f"{change:.0f}"
+    orig_ws = report["weighted_score"]
+    opt_ws = comparison["weighted_score_optimized"] if comparison else 0
+    ws_change = comparison["weighted_score_change"] if comparison else 0
+    change_str = f"+{ws_change:.1f}" if ws_change >= 0 else f"{ws_change:.1f}"
 
     # ── Original Tweet ──
     parts.append(_header_line("ORIGINAL TWEET", w))
@@ -191,7 +191,7 @@ def render_preserve_style(result: dict) -> str:
     chars = analysis["char_count"]
     lang_str = analysis["lang"].upper()
     char_color = RED if chars > 280 else GREEN
-    parts.append(f"  {GRAY}Characters: {char_color}{chars}/280{RESET}  {GRAY}│  Lang: {CYAN}{lang_str}{RESET}  {GRAY}│  Score: {YELLOW}{orig_overall:.0f}%{RESET}")
+    parts.append(f"  {GRAY}Characters: {char_color}{chars}/280{RESET}  {GRAY}│  Lang: {CYAN}{lang_str}{RESET}  {GRAY}│  Score: {YELLOW}{orig_ws:.1f}{RESET}")
 
     # ── Signal Profile (compact) ──
     parts.append("")
@@ -226,8 +226,8 @@ def render_preserve_style(result: dict) -> str:
     # ── Optimized Tweet ──
     parts.append("")
     parts.append("")
-    score_color = GREEN if change > 0 else RED if change < 0 else YELLOW
-    parts.append(_header_line(f"OPTIMIZED TWEET  {score_color}{orig_overall:.0f}% {ARROW_RIGHT} {opt_overall:.0f}% ({change_str}pts){RESET}", w + 20))
+    score_color = GREEN if ws_change > 0 else RED if ws_change < 0 else YELLOW
+    parts.append(_header_line(f"OPTIMIZED TWEET  {score_color}{orig_ws:.1f} {ARROW_RIGHT} {opt_ws:.1f} ({change_str}){RESET}", w + 20))
     parts.append("")
 
     opt_tweet = optimized.get("tweet", "")
@@ -276,27 +276,6 @@ def render_preserve_style(result: dict) -> str:
                 f"    {GRAY}{name:<22}{RESET} {orig_pct:>3.0%} {ARROW_RIGHT} {opt_pct:>3.0%}  {sign}{dpct:.1f}%  {arrows}"
             )
 
-        # ── Category Scores ──
-        parts.append("")
-        parts.append(_section_title("Category Scores"))
-        parts.append(_divider(w))
-
-        cat_delta = comparison["category_delta"]
-        cat_order = ["engagement", "discoverability", "shareability",
-                     "content_quality", "safety"]
-        for cat in cat_order:
-            if cat in cat_delta:
-                cd = cat_delta[cat]
-                opt_val = cd["optimized"]
-                ch = cd["change"]
-                bar = _bar(opt_val / 100.0, 20)
-                sign = "+" if ch >= 0 else ""
-                cat_label = cat.replace("_", " ").title()
-                ch_color = GREEN if ch > 0 else RED if ch < 0 else GRAY
-                parts.append(
-                    f"    {GRAY}{cat_label:<20}{RESET} {bar} {opt_val:>3.0f}%  {ch_color}({sign}{ch:.0f}pts){RESET}"
-                )
-
     # Media suggestion
     media_sug = optimized.get("media_suggestion", "")
     if media_sug:
@@ -339,18 +318,18 @@ def render_variation_card(
     media_sug = variation.get("media_suggestion", "")
     explanation = variation.get("explanation", "")
 
-    opt_overall = 0.0
-    overall_change = 0.0
+    opt_ws = 0.0
+    ws_change = 0.0
     if comparison:
-        opt_overall = comparison["optimized"]["overall"]
-        overall_change = comparison["overall_change"]
+        opt_ws = comparison["weighted_score_optimized"]
+        ws_change = comparison["weighted_score_change"]
 
-    change_str = f"+{overall_change:.0f}" if overall_change >= 0 else f"{overall_change:.0f}"
-    change_color = GREEN if overall_change > 0 else RED if overall_change < 0 else GRAY
+    change_str = f"+{ws_change:.1f}" if ws_change >= 0 else f"{ws_change:.1f}"
+    change_color = GREEN if ws_change > 0 else RED if ws_change < 0 else GRAY
 
     # Card header
     parts.append("")
-    parts.append(f"  {BOLD}{BRIGHT_MAGENTA}[{index}]{RESET} {BOLD}{WHITE}{strategy}{RESET}  {change_color}{opt_overall:.0f}% ({change_str}pts){RESET}")
+    parts.append(f"  {BOLD}{BRIGHT_MAGENTA}[{index}]{RESET} {BOLD}{WHITE}{strategy}{RESET}  {change_color}{opt_ws:.1f} ({change_str}){RESET}")
     parts.append(_divider(w))
     parts.append("")
 
@@ -390,20 +369,6 @@ def render_variation_card(
                 f"    {GRAY}{name:<22}{RESET} {orig_pct:>3.0%} {ARROW_RIGHT} {opt_pct:>3.0%}  {sign}{dpct:.1f}%  {arrows}"
             )
 
-        # Category scores (compact single line)
-        cat_delta = comparison["category_delta"]
-        cat_parts = []
-        for cat in ["engagement", "discoverability", "shareability", "content_quality", "safety"]:
-            if cat in cat_delta:
-                cd = cat_delta[cat]
-                ch = cd["change"]
-                sign = "+" if ch >= 0 else ""
-                color = GREEN if ch > 0 else RED if ch < 0 else GRAY
-                short_name = cat.replace("_", " ").title()[:12]
-                cat_parts.append(f"{color}{short_name}: {sign}{ch:.0f}{RESET}")
-        parts.append("")
-        parts.append(f"    {GRAY}Categories:{RESET} {'  '.join(cat_parts)}")
-
     if media_sug:
         parts.append(f"    {MAGENTA}{BULLET} Media:{RESET} {DIM}{media_sug[:60]}{'...' if len(media_sug) > 60 else ''}{RESET}")
 
@@ -430,23 +395,23 @@ def render_variations(result: dict, verbose: bool = False) -> str:
     parts.append(_header_line("SUMMARY", w))
     parts.append("")
 
-    original_overall = result["original_report"]["overall"]
-    parts.append(f"    {GRAY}{'Tweet':<8} {'Strategy':<28} {'Score':>6}  {'Change':>8}{RESET}")
-    parts.append(f"    {GRAY}{'─' * 54}{RESET}")
-    parts.append(f"    {DIM}{'Original':<8} {'-':<28} {original_overall:>5.0f}%  {'-':>8}{RESET}")
+    orig_ws = result["original_report"]["weighted_score"]
+    parts.append(f"    {GRAY}{'Tweet':<8} {'Strategy':<28} {'Score':>8}  {'Change':>8}{RESET}")
+    parts.append(f"    {GRAY}{'─' * 56}{RESET}")
+    parts.append(f"    {DIM}{'Original':<8} {'-':<28} {orig_ws:>7.1f}  {'-':>8}{RESET}")
 
     for i, (var, comp) in enumerate(zip(result["variations"], result["comparisons"]), 1):
         strategy = var.get("strategy", "")[:26]
         if comp:
-            opt_score = comp["optimized"]["overall"]
-            ch = comp["overall_change"]
+            opt_ws = comp["weighted_score_optimized"]
+            ch = comp["weighted_score_change"]
             sign = "+" if ch >= 0 else ""
             ch_color = GREEN if ch > 0 else RED if ch < 0 else GRAY
             parts.append(
-                f"    {BRIGHT_MAGENTA}#{i:<7}{RESET} {WHITE}{strategy:<28}{RESET} {opt_score:>5.0f}%  {ch_color}{sign}{ch:.0f}pts{RESET}"
+                f"    {BRIGHT_MAGENTA}#{i:<7}{RESET} {WHITE}{strategy:<28}{RESET} {opt_ws:>7.1f}  {ch_color}{sign}{ch:.1f}{RESET}"
             )
         else:
-            parts.append(f"    {BRIGHT_MAGENTA}#{i:<7}{RESET} {strategy:<28}   {'N/A':>5}  {'N/A':>8}")
+            parts.append(f"    {BRIGHT_MAGENTA}#{i:<7}{RESET} {strategy:<28}   {'N/A':>7}  {'N/A':>8}")
 
     # Analysis
     if result.get("claude_analysis"):
@@ -478,8 +443,7 @@ def render_json(result: dict) -> str:
             "char_count": result["analysis"]["char_count"],
             "lang": result["lang"],
             "scores": result["original_report"]["signals"],
-            "categories": result["original_report"]["categories"],
-            "overall_score": result["original_report"]["overall"],
+            "weighted_score": result["original_report"]["weighted_score"],
         },
         "variations": [],
         "analysis": result.get("claude_analysis", ""),
@@ -496,12 +460,8 @@ def render_json(result: dict) -> str:
             "explanation": var.get("explanation", ""),
         }
         if comp:
-            v["overall_score"] = comp["optimized"]["overall"]
-            v["overall_change"] = comp["overall_change"]
-            v["category_scores"] = {
-                k: round(v2 * 100, 1)
-                for k, v2 in comp["optimized"]["categories"].items()
-            }
+            v["weighted_score"] = comp["weighted_score_optimized"]
+            v["weighted_score_change"] = comp["weighted_score_change"]
         output["variations"].append(v)
 
     return json.dumps(output, indent=2, ensure_ascii=False)

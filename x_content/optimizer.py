@@ -184,14 +184,14 @@ def optimize(
     comparisons = []
     for var in data["variations"]:
         if "scores" in var:
-            comp = comparison_report(analysis, var["scores"])
+            comp = comparison_report(analysis, var["scores"], has_media=has_media)
             comparisons.append(comp)
         else:
             comparisons.append(None)
 
     # Build original report
     from x_content.scorer import full_score_report
-    original_report = full_score_report(analysis)
+    original_report = full_score_report(analysis, has_media=has_media)
 
     return {
         "tweet": tweet,
@@ -259,10 +259,10 @@ def optimize_preserve_style(
     # Step 6: Generate comparison
     comp = None
     if "scores" in var:
-        comp = comparison_report(analysis, var["scores"])
+        comp = comparison_report(analysis, var["scores"], has_media=has_media)
 
     from x_content.scorer import full_score_report
-    original_report = full_score_report(analysis)
+    original_report = full_score_report(analysis, has_media=has_media)
 
     return {
         "tweet": tweet,
@@ -326,10 +326,10 @@ def refine_tweet(
     original_analysis = analyze(original_tweet, has_media=has_media)
     comp = None
     if "scores" in var:
-        comp = comparison_report(original_analysis, var["scores"])
+        comp = comparison_report(original_analysis, var["scores"], has_media=has_media)
 
     from x_content.scorer import full_score_report
-    original_report = full_score_report(original_analysis)
+    original_report = full_score_report(original_analysis, has_media=has_media)
 
     return {
         "tweet": original_tweet,

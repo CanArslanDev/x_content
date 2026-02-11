@@ -12,41 +12,6 @@ optimization:
   lang: auto            # default language: en, tr, auto
   max_chars: 280        # tweet character limit
 
-# Category weights for Overall Algorithm Compatibility Score
-# Must sum to 1.0
-category_weights:
-  engagement: 0.35      # favorite, reply, repost, quote
-  discoverability: 0.20 # click, profile_click, follow_author
-  shareability: 0.25    # share, share_via_dm, share_via_copy_link
-  content_quality: 0.15 # dwell_score, dwell_time, photo_expand, vqv
-  safety: 0.05          # not_interested, block, mute, report (inverted)
-
-# Signal groupings for categorical metrics
-categories:
-  engagement:
-    - favorite_score
-    - reply_score
-    - repost_score
-    - quote_score
-  discoverability:
-    - click_score
-    - profile_click_score
-    - follow_author_score
-  shareability:
-    - share_score
-    - share_via_dm_score
-    - share_via_copy_link_score
-  content_quality:
-    - dwell_score
-    - dwell_time
-    - photo_expand_score
-    - vqv_score
-  safety:
-    - not_interested_score
-    - block_author_score
-    - mute_author_score
-    - report_score
-
 # Display settings
 display:
   bar_width: 24         # width of progress bars in characters

@@ -5,8 +5,10 @@ tweet features. Produces scores for both original and optimized tweets
 to generate comparison reports.
 """
 
-from x_content.algorithm import ACTIONS, NEGATIVE_ACTIONS, ACTION_WEIGHTS
-from x_content import config
+from x_content.algorithm import (
+    ACTIONS, NEGATIVE_ACTIONS, ACTION_WEIGHTS,
+    compute_weighted_score as _compute_weighted,
+)
 
 
 def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -227,94 +229,42 @@ def compute_delta(original: dict[str, float],
     return result
 
 
-def compute_category_scores(scores: dict[str, float]) -> dict[str, float]:
-    """Compute 5 categorical metric scores (0.0-1.0) from 19 signal scores.
-
-    Categories: engagement, discoverability, shareability, content_quality, safety.
-    Safety is inverted (lower negative signals = higher safety score).
-    """
-    cfg = config.get("categories", {})
-
-    categories = {}
-    for cat_name, signals in cfg.items():
-        if cat_name == "safety":
-            # Invert: low negative scores = high safety
-            raw = sum(scores.get(s, 0.0) for s in signals) / max(len(signals), 1)
-            categories[cat_name] = _clamp(1.0 - raw)
-        else:
-            total = sum(scores.get(s, 0.0) for s in signals)
-            categories[cat_name] = _clamp(total / max(len(signals), 1))
-    return categories
-
-
-def compute_overall_score(category_scores: dict[str, float]) -> float:
-    """Compute weighted overall algorithm compatibility score (0-100).
-
-    Overall = (0.35 * Engagement + 0.20 * Discoverability
-             + 0.25 * Shareability + 0.15 * Content Quality
-             + 0.05 * Safety) * 100
-    """
-    weights = config.get("category_weights", {
-        "engagement": 0.35,
-        "discoverability": 0.20,
-        "shareability": 0.25,
-        "content_quality": 0.15,
-        "safety": 0.05,
-    })
-    total = sum(
-        category_scores.get(cat, 0.0) * w
-        for cat, w in weights.items()
-    )
-    return round(total * 100, 1)
-
-
-def full_score_report(analysis: dict) -> dict:
+def full_score_report(analysis: dict, has_media: bool = False) -> dict:
     """Generate complete scoring report for a single tweet.
 
-    Returns dict with: signals (19 scores), categories (5 scores), overall.
+    Returns dict with: signals (19 scores), weighted_score.
     """
     signals = score_tweet(analysis)
-    categories = compute_category_scores(signals)
-    overall = compute_overall_score(categories)
+    weighted_score = _compute_weighted(signals, has_media=has_media)
     return {
         "signals": signals,
-        "categories": categories,
-        "overall": overall,
+        "weighted_score": round(weighted_score, 2),
     }
 
 
 def comparison_report(original_analysis: dict,
-                      optimized_scores: dict[str, float]) -> dict:
+                      optimized_scores: dict[str, float],
+                      has_media: bool = False) -> dict:
     """Generate full comparison between original tweet and optimized variation.
 
-    Returns dict with: original (full report), optimized (scores + categories + overall),
-    delta (per-signal changes), category_delta.
+    Returns dict with: original (full report), optimized signals + weighted_score,
+    delta (per-signal changes), weighted_score_original, weighted_score_optimized,
+    weighted_score_change.
     """
-    orig_report = full_score_report(original_analysis)
+    orig_report = full_score_report(original_analysis, has_media=has_media)
 
-    opt_categories = compute_category_scores(optimized_scores)
-    opt_overall = compute_overall_score(opt_categories)
+    opt_weighted = _compute_weighted(optimized_scores, has_media=has_media)
 
     delta = compute_delta(orig_report["signals"], optimized_scores)
-
-    category_delta = {}
-    for cat in orig_report["categories"]:
-        orig_val = orig_report["categories"][cat]
-        opt_val = opt_categories.get(cat, 0.0)
-        category_delta[cat] = {
-            "original": round(orig_val * 100, 1),
-            "optimized": round(opt_val * 100, 1),
-            "change": round((opt_val - orig_val) * 100, 1),
-        }
 
     return {
         "original": orig_report,
         "optimized": {
             "signals": optimized_scores,
-            "categories": opt_categories,
-            "overall": opt_overall,
+            "weighted_score": round(opt_weighted, 2),
         },
         "delta": delta,
-        "category_delta": category_delta,
-        "overall_change": round(opt_overall - orig_report["overall"], 1),
+        "weighted_score_original": orig_report["weighted_score"],
+        "weighted_score_optimized": round(opt_weighted, 2),
+        "weighted_score_change": round(opt_weighted - orig_report["weighted_score"], 2),
     }

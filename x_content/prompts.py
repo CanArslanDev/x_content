@@ -7,7 +7,7 @@ sent to Claude Code CLI via subprocess.
 import json
 
 from x_content.algorithm import (
-    ACTIONS, ACTION_LABELS, ACTION_WEIGHTS, NEGATIVE_ACTIONS, SIGNAL_MAP,
+    ACTIONS, ACTION_LABELS, ACTION_WEIGHTS, NEGATIVE_ACTIONS,
 )
 
 SYSTEM_PROMPT = """You are an expert X (Twitter) algorithm optimizer. You have deep knowledge of X's open-sourced "For You" feed ranking algorithm (Phoenix model).
@@ -46,7 +46,7 @@ NEGATIVE SIGNALS (trigger HARSH penalties):
 ### Score Calculation
 1. Each action gets a probability P(action) from 0.0 to 1.0
 2. Weighted sum: combined = Σ(P(action_i) × weight_i)
-3. Offset: negative combined scores are multiplied by 2x (harsher penalty)
+3. Offset (weighted_scorer.rs): if combined < 0, score is shifted by negative weight sum ratio; if >= 0, a fixed offset is added
 4. Normalize to final ranking score
 
 ### Key Strategic Insights

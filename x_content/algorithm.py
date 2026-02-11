@@ -1,7 +1,7 @@
 """X algorithm knowledge base.
 
 Derived from x-algorithm source: phoenix/runners.py:202-222 (19 ACTIONS)
-and home-mixer scoring logic.
+and home-mixer scoring logic (weighted_scorer.rs).
 """
 
 # The 19 engagement actions predicted by the Phoenix model.
@@ -82,136 +82,60 @@ ACTION_WEIGHTS: dict[str, float] = {
     "block_author_score": -371.0,
     "mute_author_score": -74.0,
     "report_score": -9209.0,        # strongest negative signal
-    "dwell_time": 0.8,
+    "dwell_time": 0.8,              # CONT_DWELL_TIME_WEIGHT (continuous action)
 }
 
-
-# Content-to-signal map: which tweet features influence which signals.
-# Used by scorer.py to estimate per-signal scores from structural features.
-SIGNAL_MAP: dict[str, dict] = {
-    "favorite_score": {
-        "drivers": ["emotional_resonance", "relatable_content", "strong_opinion",
-                     "humor", "visual_appeal"],
-        "description": "Probability user taps Like. Driven by emotional impact and relatability.",
-    },
-    "reply_score": {
-        "drivers": ["question", "controversial_take", "incomplete_thought",
-                     "call_to_action", "debate_trigger"],
-        "description": "Probability user replies. Questions and debate-provoking content drive this.",
-    },
-    "repost_score": {
-        "drivers": ["quotable_insight", "data_stat", "universal_truth",
-                     "identity_signal", "useful_tip"],
-        "description": "Probability user retweets. Shareable, identity-reinforcing content wins.",
-    },
-    "photo_expand_score": {
-        "drivers": ["has_media", "intriguing_preview", "data_visualization"],
-        "description": "Probability user expands attached photo.",
-    },
-    "click_score": {
-        "drivers": ["has_url", "curiosity_gap", "teaser_text"],
-        "description": "Probability user clicks a link in the tweet.",
-    },
-    "profile_click_score": {
-        "drivers": ["authority_signal", "unique_perspective", "credibility_marker",
-                     "curiosity_about_author"],
-        "description": "Probability user clicks author profile. Expertise signals drive this.",
-    },
-    "vqv_score": {
-        "drivers": ["has_video", "video_hook_text", "native_video"],
-        "description": "Probability user watches video to quality threshold.",
-    },
-    "share_score": {
-        "drivers": ["useful_content", "save_worthy", "reference_material",
-                     "actionable_advice"],
-        "description": "General share probability. Utility and reference value matter.",
-    },
-    "share_via_dm_score": {
-        "drivers": ["personal_relevance", "conversation_starter", "niche_insight",
-                     "surprising_fact", "emotionally_moving"],
-        "description": "DM share probability. THE STRONGEST positive signal. Content people send to specific friends.",
-    },
-    "share_via_copy_link_score": {
-        "drivers": ["cross_platform_value", "reference_material", "comprehensive_take"],
-        "description": "Copy-link share probability. Content worth sharing outside X.",
-    },
-    "dwell_score": {
-        "drivers": ["hook_first_line", "line_breaks", "storytelling",
-                     "progressive_reveal"],
-        "description": "Probability user pauses to read. Strong hooks and formatting matter.",
-    },
-    "quote_score": {
-        "drivers": ["hot_take", "framework", "data_claim", "reaction_worthy",
-                     "addable_context"],
-        "description": "Probability user quote-tweets. Content that invites commentary.",
-    },
-    "quoted_click_score": {
-        "drivers": ["embedded_quote_tweet", "referenced_content"],
-        "description": "Probability user clicks on an embedded quote tweet.",
-    },
-    "follow_author_score": {
-        "drivers": ["expertise_signal", "unique_niche", "consistent_value",
-                     "personality_display"],
-        "description": "Probability user follows after seeing tweet. Authority and uniqueness drive this.",
-    },
-    "not_interested_score": {
-        "drivers": ["irrelevant_topic", "low_effort", "spam_signals",
-                     "excessive_hashtags", "engagement_bait"],
-        "description": "NEGATIVE. Probability user marks 'not interested'. Avoid spam patterns.",
-    },
-    "block_author_score": {
-        "drivers": ["offensive_content", "harassment", "extreme_spam",
-                     "misleading_content"],
-        "description": "NEGATIVE. Probability user blocks. Extremely costly to ranking.",
-    },
-    "mute_author_score": {
-        "drivers": ["repetitive_content", "excessive_posting", "mild_annoyance",
-                     "off_topic"],
-        "description": "NEGATIVE. Probability user mutes author.",
-    },
-    "report_score": {
-        "drivers": ["policy_violation", "misinformation", "hate_speech",
-                     "graphic_content"],
-        "description": "NEGATIVE. THE STRONGEST negative signal. Content that violates platform rules.",
-    },
-    "dwell_time": {
-        "drivers": ["long_form_content", "detailed_explanation", "storytelling",
-                     "multi_line_format", "hook_then_payoff"],
-        "description": "Expected read duration. Longer dwell = higher quality signal. Formatting matters.",
-    },
-}
+# Derived weight constants (weighted_scorer.rs:83-91)
+WEIGHTS_SUM = sum(w for w in ACTION_WEIGHTS.values() if w > 0)
+NEGATIVE_WEIGHTS_SUM = sum(abs(w) for w in ACTION_WEIGHTS.values() if w < 0)
+NEGATIVE_SCORES_OFFSET = NEGATIVE_WEIGHTS_SUM / max(WEIGHTS_SUM, 1)
 
 
-def compute_weighted_score(scores: dict[str, float]) -> float:
-    """Compute the combined weighted score from 19 dimension scores.
+def compute_weighted_score(scores: dict[str, float],
+                           has_media: bool = False) -> float:
+    """Compute the weighted score from 19 dimension scores.
 
-    Mirrors the x-algorithm WeightedScorer:
-    combined = sum(score_i * weight_i)
+    Mirrors x-algorithm WeightedScorer (weighted_scorer.rs:44-70):
+    1. combined = sum(score_i * weight_i)  (with VQV eligibility check)
+    2. return offset_score(combined)
 
-    Negative actions contribute negatively via their negative weights.
+    VQV weight eligibility (weighted_scorer.rs:72-81):
+    if no video/media, vqv_score weight is set to 0.
     """
     total = 0.0
     for action in ACTIONS:
         score = scores.get(action, 0.0)
         weight = ACTION_WEIGHTS.get(action, 0.0)
+        # VQV weight eligibility: no media → vqv weight = 0
+        if action == "vqv_score" and not has_media:
+            weight = 0.0
         total += score * weight
-    return total
+    return offset_score(total)
 
 
 def offset_score(raw_score: float) -> float:
     """Apply offset transformation to raw weighted score.
 
-    From weighted_scorer.rs: negative scores are scaled differently
-    to penalize bad content more harshly.
+    From weighted_scorer.rs:83-91:
+    - If WEIGHTS_SUM == 0: max(combined, 0)
+    - If combined < 0: (combined + NEGATIVE_WEIGHTS_SUM) / WEIGHTS_SUM * NEGATIVE_SCORES_OFFSET
+    - Else: combined + NEGATIVE_SCORES_OFFSET
     """
-    if raw_score >= 0:
-        return raw_score
-    return raw_score * 2.0  # negative scores weighted 2x
+    if WEIGHTS_SUM == 0:
+        return max(raw_score, 0.0)
+    if raw_score < 0:
+        return (raw_score + NEGATIVE_WEIGHTS_SUM) / WEIGHTS_SUM * NEGATIVE_SCORES_OFFSET
+    return raw_score + NEGATIVE_SCORES_OFFSET
 
 
 def normalize_score(raw_score: float, min_score: float = -100.0,
                     max_score: float = 300.0) -> float:
-    """Normalize raw score to 0-100 percentage scale."""
+    """Normalize raw score to a 0-100 scale.
+
+    Note: approximate — the actual score_normalizer implementation is
+    excluded from x-algorithm open source. This uses offset + linear
+    clamping as a reasonable approximation.
+    """
     offset = offset_score(raw_score)
     clamped = max(min_score, min(max_score, offset))
     return ((clamped - min_score) / (max_score - min_score)) * 100.0
