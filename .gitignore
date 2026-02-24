@@ -18,3 +18,4 @@ env/
 .vscode/
 .cache/
 .twitter_cookies
+x-algorithm/
