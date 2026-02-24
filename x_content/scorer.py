@@ -268,3 +268,56 @@ def comparison_report(original_analysis: dict,
         "weighted_score_optimized": round(opt_weighted, 2),
         "weighted_score_change": round(opt_weighted - orig_report["weighted_score"], 2),
     }
+
+
+def adjust_scores_for_profile(
+    scores: dict[str, float],
+    user_profile: dict,
+) -> dict[str, float]:
+    """Adjust heuristic scores based on user's historical engagement patterns.
+
+    Calibrates scores using the author's actual engagement data:
+    - High reply engagement → boost reply_score
+    - High quote engagement → boost quote_score
+    - Large following → reduce profile_click_score (already known)
+    - Small following → boost profile_click_score (growth potential)
+
+    Returns a new scores dict (does not mutate input).
+    """
+    adjusted = dict(scores)
+    engagement = user_profile.get("engagement", {})
+    followers = user_profile.get("followers", 0)
+
+    er_total = engagement.get("engagement_rate_total", 0)
+    avg_replies = engagement.get("avg_replies", 0)
+    avg_quotes = engagement.get("avg_quotes", 0)
+    avg_likes = engagement.get("avg_likes", 0)
+
+    # Reply-heavy author: their audience is more likely to reply
+    if avg_likes > 0 and (avg_replies / max(avg_likes, 1)) > 0.25:
+        adjusted["reply_score"] = _clamp(adjusted.get("reply_score", 0) + 0.05)
+
+    # Quote-heavy author: their audience engages via quotes
+    if avg_likes > 0 and (avg_quotes / max(avg_likes, 1)) > 0.05:
+        adjusted["quote_score"] = _clamp(adjusted.get("quote_score", 0) + 0.05)
+
+    # Large account: profile clicks less likely (already known)
+    if followers > 50_000:
+        adjusted["profile_click_score"] = _clamp(
+            adjusted.get("profile_click_score", 0) - 0.03
+        )
+
+    # Small account: profile clicks more likely (discovery phase)
+    if followers < 1_000:
+        adjusted["profile_click_score"] = _clamp(
+            adjusted.get("profile_click_score", 0) + 0.05
+        )
+
+    # High overall engagement: audience is active, boost share signals slightly
+    if er_total > 3.0:
+        adjusted["share_score"] = _clamp(adjusted.get("share_score", 0) + 0.03)
+        adjusted["share_via_dm_score"] = _clamp(
+            adjusted.get("share_via_dm_score", 0) + 0.03
+        )
+
+    return adjusted

@@ -12,6 +12,13 @@ optimization:
   lang: auto            # default language: en, tr, auto
   max_chars: 280        # tweet character limit
 
+# User profile settings (twscrape integration)
+profile:
+  cache_ttl_hours: 24      # how long to cache profile data
+  max_tweets: 50            # number of recent tweets to fetch
+  top_tweets_count: 5       # number of top tweets to analyze
+  cache_dir: .cache/profiles # cache directory for profile data
+
 # Display settings
 display:
   bar_width: 24         # width of progress bars in characters

@@ -465,3 +465,206 @@ def render_json(result: dict) -> str:
         output["variations"].append(v)
 
     return json.dumps(output, indent=2, ensure_ascii=False)
+
+
+def render_profile_summary(profile: dict) -> str:
+    """Render a user profile summary for terminal display."""
+    w = _get_width()
+    parts = []
+
+    username = profile.get("username", "unknown")
+    followers = profile.get("followers", 0)
+    following = profile.get("following", 0)
+    tweet_count = profile.get("tweet_count", 0)
+    verified = profile.get("verified", False)
+    engagement = profile.get("engagement", {})
+    style = profile.get("style", {})
+    topics = profile.get("topics", [])
+
+    # Format followers
+    if followers >= 1_000_000:
+        f_str = f"{followers / 1_000_000:.1f}M"
+    elif followers >= 1_000:
+        f_str = f"{followers / 1_000:.1f}K"
+    else:
+        f_str = str(followers)
+
+    # Format tweet count
+    if tweet_count >= 1_000:
+        tc_str = f"{tweet_count:,}"
+    else:
+        tc_str = str(tweet_count)
+
+    blue_str = f"{CYAN}Yes{RESET}" if verified else f"{GRAY}No{RESET}"
+
+    parts.append("")
+    parts.append(_header_line(f"PROFILE: @{username}", w))
+    parts.append(
+        f"  Followers: {BOLD}{WHITE}{f_str}{RESET}  "
+        f"{GRAY}|{RESET}  Tweets: {WHITE}{tc_str}{RESET}  "
+        f"{GRAY}|{RESET}  Blue: {blue_str}"
+    )
+
+    # Engagement metrics
+    avg_likes = engagement.get("avg_likes", 0)
+    avg_rts = engagement.get("avg_retweets", 0)
+    avg_replies = engagement.get("avg_replies", 0)
+    avg_quotes = engagement.get("avg_quotes", 0)
+    er_likes = engagement.get("engagement_rate_likes", 0)
+    er_rts = engagement.get("engagement_rate_retweets", 0)
+
+    parts.append("")
+    parts.append(_section_title("Engagement (per tweet)"))
+    parts.append(_divider(w))
+    parts.append(
+        f"    {GRAY}Likes:{RESET} {GREEN}{avg_likes:.1f}{RESET}  "
+        f"{GRAY}RTs:{RESET} {CYAN}{avg_rts:.1f}{RESET}  "
+        f"{GRAY}Replies:{RESET} {YELLOW}{avg_replies:.1f}{RESET}  "
+        f"{GRAY}Quotes:{RESET} {MAGENTA}{avg_quotes:.1f}{RESET}"
+    )
+    parts.append(
+        f"    {GRAY}Like rate:{RESET} {er_likes:.2f}%  "
+        f"{GRAY}RT rate:{RESET} {er_rts:.2f}%"
+    )
+
+    # Style info
+    tone = style.get("typical_tone", "neutral")
+    avg_len = style.get("avg_tweet_length", 0)
+    avg_emoji = style.get("emoji_frequency", 0)
+
+    parts.append("")
+    parts.append(
+        f"  {GRAY}Style:{RESET} {WHITE}{tone}{RESET}  "
+        f"{GRAY}|{RESET}  {GRAY}Avg length:{RESET} {WHITE}{avg_len:.0f}{RESET} chars  "
+        f"{GRAY}|{RESET}  {GRAY}Emojis:{RESET} {WHITE}{avg_emoji:.1f}{RESET}/tweet"
+    )
+
+    # Topics
+    if topics:
+        topic_str = ", ".join(topics[:6])
+        parts.append(f"  {GRAY}Topics:{RESET} {CYAN}{topic_str}{RESET}")
+
+    parts.append(f"  {GRAY}{'─' * (w - 4)}{RESET}")
+    parts.append("")
+
+    return "\n".join(parts)
+
+
+def render_discovery_result(result: dict) -> str:
+    """Render a discovery-generated tweet result.
+
+    Unlike render_preserve_style, there is no 'original' tweet to compare
+    against — this shows the generated tweet with its topic/angle context
+    and signal scores.
+    """
+    w = _get_width()
+    parts = []
+
+    trending = result.get("trending_topic", {})
+    angle = result.get("angle", "")
+    optimized = result.get("optimized", {})
+    report = result.get("generated_report", {})
+
+    topic_name = trending.get("name", "Unknown topic")
+
+    # Header
+    parts.append("")
+    parts.append(f"  {BOLD}{BRIGHT_CYAN}{'=' * (w - 4)}{RESET}")
+    parts.append(f"  {BOLD}{WHITE}  TRENDING TOPIC TWEET{RESET}")
+    parts.append(f"  {BOLD}{BRIGHT_CYAN}{'=' * (w - 4)}{RESET}")
+    parts.append("")
+
+    # Topic context
+    parts.append(_header_line(f"TOPIC: {topic_name}", w))
+    parts.append("")
+
+    context = trending.get("context", "")
+    if context:
+        parts.append(f"    {GRAY}Context:{RESET} {DIM}{context}{RESET}")
+
+    popular = trending.get("popular_take", "")
+    if popular:
+        parts.append(f"    {GRAY}Popular take:{RESET} {DIM}{popular}{RESET}")
+
+    contrarian = trending.get("contrarian_angle", "")
+    if contrarian:
+        parts.append(f"    {GRAY}Contrarian:{RESET} {DIM}{contrarian}{RESET}")
+
+    angle_display = angle.replace("_", " ").title() if angle else ""
+    if angle_display:
+        parts.append(f"    {GRAY}Your angle:{RESET} {CYAN}{angle_display}{RESET}")
+
+    # Generated tweet
+    parts.append("")
+    opt_tweet = optimized.get("tweet", "")
+    opt_chars = optimized.get("char_count", len(opt_tweet))
+
+    ws = report.get("weighted_score", 0) if report else 0
+    parts.append(_header_line(f"GENERATED TWEET  {YELLOW}Score: {ws:.1f}{RESET}", w + 15))
+    parts.append("")
+
+    parts.append(f"  {BOLD}{WHITE}")
+    for line in _wrap_text(opt_tweet, w):
+        parts.append(f"    {line}")
+    parts.append(f"  {RESET}")
+    parts.append("")
+
+    char_color = RED if opt_chars > 280 else GREEN
+    parts.append(f"  {GRAY}Characters: {char_color}{opt_chars}/280{RESET}")
+
+    # Strategy and explanation
+    strategy = optimized.get("strategy", "")
+    if strategy:
+        parts.append(f"  {GRAY}Strategy: {WHITE}{strategy}{RESET}")
+
+    explanation = optimized.get("explanation", "")
+    if explanation:
+        parts.append(f"  {GRAY}{ITALIC}{explanation}{RESET}")
+
+    # Signal scores (top signals)
+    if "scores" in optimized:
+        parts.append("")
+        parts.append(_section_title("Signal Scores"))
+        parts.append(_divider(w))
+
+        display_cfg = config.get("display", {})
+        top_n = display_cfg.get("top_signals_count", 8)
+
+        scores = optimized["scores"]
+        scored = []
+        for a in ACTIONS:
+            if a in NEGATIVE_ACTIONS:
+                scored.append((a, 999))
+            else:
+                scored.append((a, scores.get(a, 0.0)))
+        scored.sort(key=lambda x: -x[1])
+        display_actions = [a for a, _ in scored[:top_n]]
+
+        for action in display_actions:
+            val = scores.get(action, 0.0)
+            is_neg = action in NEGATIVE_ACTIONS
+            bar = _bar_negative(val) if is_neg else _bar(val)
+            risk_label = f"  {RED}risk{RESET}" if is_neg else ""
+            name = ACTION_LABELS.get(action, action)
+            parts.append(f"    {GRAY}{name:<22}{RESET} {bar} {val:>4.0%}{risk_label}")
+
+    # Media suggestion
+    media_sug = optimized.get("media_suggestion", "")
+    if media_sug:
+        parts.append("")
+        parts.append(f"  {MAGENTA}{BULLET} Media tip:{RESET} {DIM}{media_sug}{RESET}")
+
+    # Analysis
+    claude_analysis = result.get("claude_analysis", "")
+    if claude_analysis:
+        parts.append("")
+        parts.append(_section_title("Analysis"))
+        parts.append(_divider(w))
+        for line in _wrap_text(claude_analysis, w - 4):
+            parts.append(f"    {DIM}{line}{RESET}")
+
+    parts.append("")
+    parts.append(f"  {GRAY}{'=' * (w - 4)}{RESET}")
+    parts.append("")
+
+    return "\n".join(parts)

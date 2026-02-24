@@ -10,8 +10,11 @@ import sys
 
 from x_content.algorithm import ACTIONS
 from x_content.analyzer import analyze
-from x_content.prompts import build_full_prompt, build_preserve_style_prompt, build_refine_prompt
-from x_content.scorer import score_tweet, comparison_report
+from x_content.prompts import (
+    build_full_prompt, build_preserve_style_prompt,
+    build_refine_prompt, build_discovery_tweet_prompt,
+)
+from x_content.scorer import score_tweet, comparison_report, adjust_scores_for_profile
 from x_content import config
 
 
@@ -124,6 +127,7 @@ def optimize(
     style: str = "professional",
     has_media: bool = False,
     thread: bool = False,
+    user_profile: dict | None = None,
 ) -> dict:
     """Run the full optimization pipeline.
 
@@ -145,6 +149,8 @@ def optimize(
 
     # Step 2: Score original
     original_scores = score_tweet(analysis)
+    if user_profile:
+        original_scores = adjust_scores_for_profile(original_scores, user_profile)
 
     # Step 3: Build prompt
     prompt = build_full_prompt(
@@ -157,6 +163,7 @@ def optimize(
         lang=lang,
         has_media=has_media,
         thread=thread,
+        user_profile=user_profile,
     )
 
     # Step 4: Call Claude
@@ -201,6 +208,7 @@ def optimize(
         "comparisons": comparisons,
         "claude_analysis": data.get("analysis", ""),
         "lang": lang,
+        "user_profile": user_profile,
     }
 
 
@@ -210,6 +218,7 @@ def optimize_preserve_style(
     lang: str = "auto",
     has_media: bool = False,
     thread: bool = False,
+    user_profile: dict | None = None,
 ) -> dict:
     """Run Phase 1: optimize while preserving original style/voice.
 
@@ -225,6 +234,8 @@ def optimize_preserve_style(
 
     # Step 2: Score original
     original_scores = score_tweet(analysis)
+    if user_profile:
+        original_scores = adjust_scores_for_profile(original_scores, user_profile)
 
     # Step 3: Build preserve-style prompt
     prompt = build_preserve_style_prompt(
@@ -235,6 +246,7 @@ def optimize_preserve_style(
         lang=lang,
         has_media=has_media,
         thread=thread,
+        user_profile=user_profile,
     )
 
     # Step 4: Call Claude
@@ -272,6 +284,7 @@ def optimize_preserve_style(
         "comparison": comp,
         "claude_analysis": data.get("analysis", ""),
         "lang": lang,
+        "user_profile": user_profile,
     }
 
 
@@ -282,6 +295,7 @@ def refine_tweet(
     lang: str = "auto",
     has_media: bool = False,
     thread: bool = False,
+    user_profile: dict | None = None,
 ) -> dict:
     """Refine an optimized tweet based on user feedback.
 
@@ -301,6 +315,7 @@ def refine_tweet(
         lang=lang,
         has_media=has_media,
         thread=thread,
+        user_profile=user_profile,
     )
 
     # Call Claude
@@ -339,4 +354,73 @@ def refine_tweet(
         "comparison": comp,
         "claude_analysis": data.get("analysis", ""),
         "lang": lang,
+        "user_profile": user_profile,
+    }
+
+
+def generate_discovery_tweet(
+    trending_topic: dict,
+    angle: str,
+    angle_instruction: str,
+    user_profile: dict | None = None,
+    lang: str = "auto",
+    has_media: bool = False,
+    thread: bool = False,
+) -> dict:
+    """Generate an optimized tweet about a trending topic.
+
+    Used by the discovery flow. Returns dict with:
+    trending_topic, angle, optimized (single variation),
+    claude_analysis, lang, user_profile.
+    """
+    # Resolve language from profile or default
+    if lang == "auto":
+        if user_profile:
+            lang = user_profile.get("lang", "en")
+        else:
+            lang = "en"
+
+    # Build prompt
+    prompt = build_discovery_tweet_prompt(
+        trending_topic=trending_topic,
+        angle=angle,
+        angle_instruction=angle_instruction,
+        user_profile=user_profile,
+        lang=lang,
+        has_media=has_media,
+        thread=thread,
+    )
+
+    # Call Claude
+    raw_response = call_claude(prompt)
+
+    # Parse and validate
+    data = parse_response(raw_response)
+
+    if "variations" not in data or not data["variations"]:
+        raise OptimizationError("Response missing 'variations' key.")
+
+    max_chars = config.get("optimization", {}).get("max_chars", 280)
+    var = data["variations"][0]
+
+    warnings = validate_variation(var, max_chars)
+    if warnings:
+        print(f"  Warning: {'; '.join(warnings)}", file=sys.stderr)
+    if "scores" in var:
+        for action in ACTIONS:
+            var["scores"].setdefault(action, 0.0)
+
+    # Score the generated tweet for a report
+    generated_analysis = analyze(var.get("tweet", ""), has_media=has_media)
+    from x_content.scorer import full_score_report
+    generated_report = full_score_report(generated_analysis, has_media=has_media)
+
+    return {
+        "trending_topic": trending_topic,
+        "angle": angle,
+        "optimized": var,
+        "generated_report": generated_report,
+        "claude_analysis": data.get("analysis", ""),
+        "lang": lang,
+        "user_profile": user_profile,
     }
